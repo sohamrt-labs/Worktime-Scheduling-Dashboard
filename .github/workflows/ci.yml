@@ -51,11 +51,29 @@ jobs:
           cp .env.example .env
           sed -i 's/^SECRET_KEY=.*/SECRET_KEY=ci-only-secret-key-12345678/; s/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=ci-only-password-1/' .env
           docker compose up -d --build
-      - name: Smoke test through nginx (login + dashboard)
+      -name: Smoke test through nginx (login + dashboard)
         run: |
-          for i in $(seq 1 40); do curl -sf localhost:8080/api/health && break; sleep 3; done
+          # Wait for backend health
+          for i in $(seq 1 40); do
+            curl -sf localhost:8080/api/health && break
+            sleep 3
+          done
+
+          # Login and obtain access token
           TOKEN=$(curl -sf -d "username=admin&password=ci-only-password-1" localhost:8080/api/auth/login | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
-          curl -sf -H "Authorization: Bearer $TOKEN" localhost:8080/api/dashboard > /dev/null
+
+          # Retrieve the logged-in user's business ID
+          BUSINESS_ID=$(curl -sf \
+            -H "Authorization: Bearer $TOKEN" \
+            localhost:8080/api/businesses \
+            | python3 -c "import sys,json;print(json.load(sys.stdin)[0]['id'])")
+
+          # Test dashboard with authentication and business context
+          curl -sf \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "X-Business-Id: $BUSINESS_ID" \
+            localhost:8080/api/dashboard > /dev/null
+
       - name: Show container logs on failure
         if: failure()
         run: docker compose logs
