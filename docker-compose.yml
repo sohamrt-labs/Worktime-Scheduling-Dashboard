@@ -1,0 +1,29 @@
+services:
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:   # these win over env_file; SQLite lives on the persistent volume unless DATABASE_URL is set
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/worktime.db}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+    ports: ["8000:8000"]
+    volumes: ["db_data:/app/data"]
+    restart: unless-stopped
+    command: sh -c "python seed.py && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+  frontend:
+    build: ./frontend
+    ports: ["8080:80"]
+    depends_on:
+      backend: { condition: service_healthy }
+    restart: unless-stopped
+  db:                       # optional: docker compose --profile postgres up
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    environment: { POSTGRES_USER: worktime, POSTGRES_PASSWORD: worktime, POSTGRES_DB: worktime }
+    volumes: ["pg_data:/var/lib/postgresql/data"]
+volumes: { db_data: {}, pg_data: {} }
