@@ -12,7 +12,7 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -32,7 +32,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: ["backend", "frontend"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build and start the full stack
         run: |
           cp .env.example .env
@@ -106,7 +106,7 @@ jobs:
       SECRET_KEY: ci-only-secret-key-not-used-anywhere
       ADMIN_PASSWORD: ci-only-password-1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -123,7 +123,7 @@ jobs:
   prod-compose:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate the production compose file
         run: >-
           DOMAIN=ci.example.com SECRET_KEY=x POSTGRES_PASSWORD=y
