@@ -12,7 +12,7 @@ A full-stack dashboard for managers who track work items, meetings, costs, teams
 - The delay-risk model's synthetic training data is disclosed in the app, the Terms and the API
 - Production-ready deployment: HTTPS, PostgreSQL with migrations, rate limits, invite-only sign-up option. See [DEPLOY.md](DEPLOY.md).
 - Multi-user, multi-business: people create their own accounts, each account can hold several businesses, and a header switcher changes the active one. Data is isolated per business.
-- Secure login (JWT, brute-force lockout) and a dashboard of cards, charts, deadlines, equipment and workforce
+- Secure login (JWT in an httpOnly cookie, brute-force lockout) and a dashboard of cards, charts, deadlines, equipment and workforce
 - Budget vs actual cost with a Crore / Lakh switch
 - ML delay-risk badge per project, with the main cause explained and a manual override
 - Full CRUD for sites, projects, work items, meetings and machines with validation
@@ -21,12 +21,12 @@ A full-stack dashboard for managers who track work items, meetings, costs, teams
 
 ## Business data captured
 Locations (manager, phone), projects (client, type, priority, description), work items (priority, cost), meetings (location, attendees), equipment (assigned person, last service date). UI: search, sortable columns, expandable detail rows, inline status change, CSV export, risk drill-down.
-> The schema changed: after upgrading, run `python seed.py --reset` (SQLite has no migrations here; see "What I'd improve next").
+> Schema changes: PostgreSQL deployments are managed by Alembic migrations (`alembic upgrade head`, run automatically by `docker-compose.prod.yml`). The local SQLite demo has no migrations, so after upgrading run `python seed.py --reset`.
 
 ## Architecture
 ```mermaid
 flowchart LR
-  B[Browser: React + Recharts + Tailwind] -->|JSON + JWT| N[nginx / Vite proxy]
+  B[Browser: React + Recharts + Tailwind] -->|JSON + session cookie| N[nginx / Vite proxy]
   N -->|/api| A[FastAPI]
   A --> R[Routers: auth, crud, dashboard]
   R --> S[services/stats.py]
@@ -87,7 +87,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs backend tests, frontend tests +
 See **[DEPLOY.md](DEPLOY.md)** for the step-by-step guide (`docker-compose.prod.yml`, automatic HTTPS, backups). The compose file in the root (`docker-compose.yml`) is for a local demo only: it seeds demo data and uses SQLite.
 
 ## API summary
-All routes except `POST /api/auth/login` require `Authorization: Bearer <token>`. Interactive docs: `/docs`.
+Data routes need a signed-in user: the web app uses the httpOnly session cookie (plus an `X-Requested-With` CSRF header on changing requests), and scripts or Swagger can send `Authorization: Bearer <token>` instead. Only the public auth routes (login, register, password reset) work without one. Interactive docs: `/docs`.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -123,9 +123,8 @@ Captured from the real app with the seeded demo data.
 
 ## What I'd improve next
 - Replace synthetic data with real historical project data and validate the model properly (time-based split, calibration).
-- Alembic migrations instead of `create_all`; refresh tokens and multiple users/roles.
+- Refresh tokens and roles within a business (for example read-only members).
 - Pagination on list endpoints; end-to-end browser tests (Playwright); a dashboard query that aggregates in SQL instead of Python.
-- Move JWT from `localStorage` to an httpOnly cookie.
 
 ## Contributing, security and policies
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to help, and how contributions are licensed and credited
