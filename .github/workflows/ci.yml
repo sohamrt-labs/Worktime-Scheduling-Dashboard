@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ["main"]
   pull_request:
 
 jobs:
@@ -21,7 +21,8 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: Lint (ruff)
         run: pip install ruff==0.17.2 && ruff check .
-      - run: pytest -q
+      - name: Run backend tests
+        run: pytest -q
         env:
           SECRET_KEY: ci-only-secret-key-not-used-anywhere
 
@@ -43,7 +44,7 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
-    needs: [backend, frontend]
+    needs: ["backend", "frontend"]
     steps:
       - uses: actions/checkout@v4
       - name: Build and start the full stack
@@ -51,42 +52,52 @@ jobs:
           cp .env.example .env
           sed -i 's/^SECRET_KEY=.*/SECRET_KEY=ci-only-secret-key-12345678/; s/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=ci-only-password-1/' .env
           docker compose up -d --build
-      -name: Smoke test through nginx (login + dashboard)
+      - name: Smoke test through nginx (health + login + dashboard)
         run: |
-          # Wait for backend health
           for i in $(seq 1 40); do
-            curl -sf localhost:8080/api/health && break
+            if curl -fsS http://localhost:8080/api/health; then
+              break
+            fi
+            if [ "$i" -eq 40 ]; then
+              echo "API did not become healthy in time"
+              exit 1
+            fi
             sleep 3
           done
 
-          # Login and obtain access token
-          TOKEN=$(curl -sf -d "username=admin&password=ci-only-password-1" localhost:8080/api/auth/login | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+          TOKEN="$(curl -fsS -d 'username=admin&password=ci-only-password-1' http://localhost:8080/api/auth/login | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
+          test -n "$TOKEN"
 
-          # Retrieve the logged-in user's business ID
-          BUSINESS_ID=$(curl -sf \
-            -H "Authorization: Bearer $TOKEN" \
-            localhost:8080/api/businesses \
-            | python3 -c "import sys,json;print(json.load(sys.stdin)[0]['id'])")
+          BUSINESS_ID="$(curl -fsS -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/businesses | python3 -c 'import json,sys; businesses=json.load(sys.stdin); assert businesses, "No businesses returned for admin"; print(businesses[0]["id"])')"
+          test -n "$BUSINESS_ID"
 
-          # Test dashboard with authentication and business context
-          curl -sf \
+          curl -fsS \
             -H "Authorization: Bearer $TOKEN" \
             -H "X-Business-Id: $BUSINESS_ID" \
-            localhost:8080/api/dashboard > /dev/null
-
+            http://localhost:8080/api/dashboard > /dev/null
       - name: Show container logs on failure
         if: failure()
         run: docker compose logs
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
 
   postgres:
     runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:16-alpine
-        env: { POSTGRES_USER: ci, POSTGRES_PASSWORD: ci, POSTGRES_DB: ci }
-        ports: ["5432:5432"]
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - "5432:5432"
         options: >-
-          --health-cmd "pg_isready -U ci" --health-interval 5s --health-timeout 5s --health-retries 10
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
@@ -114,4 +125,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate the production compose file
-        run: DOMAIN=ci.example.com SECRET_KEY=x POSTGRES_PASSWORD=y CONTACT_EMAIL=a@b.co SMTP_HOST=smtp.b.co MAIL_FROM=a@b.co docker compose -f docker-compose.prod.yml config -q
+        run: >-
+          DOMAIN=ci.example.com SECRET_KEY=x POSTGRES_PASSWORD=y
+          CONTACT_EMAIL=a@b.co SMTP_HOST=smtp.b.co MAIL_FROM=a@b.co
+          docker compose -f docker-compose.prod.yml config -q
+
